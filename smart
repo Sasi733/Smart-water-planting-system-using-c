@@ -1,0 +1,115 @@
+#define BLYNK_TEMPLATE_NAME "water planting system"
+#define BLYNK_AUTH_TOKEN "nUzaxUyxHBF9k_thOLmWGpx603ZLO7R-"
+#define BLYNK_TEMPLATE_ID "TMPL3shazwtPu"
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <DHT.h>
+
+// Initialize the LCD display with I2C address 0x27, 16 columns, and 2 rows
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Wi-Fi credentials
+char ssid[] = "sasi";       // Your Wi-Fi name
+char pass[] = "321136412";  // Your Wi-Fi password
+
+BlynkTimer timer;
+bool Relay = 0;
+
+// Define component pins
+#define sensor A0
+#define waterPump D3
+#define DHTPIN D4      // Pin where DHT11 is connected
+#define DHTTYPE DHT11  // Define DHT sensor type
+
+DHT dht(DHTPIN, DHTTYPE); // Initialize DHT sensor
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(waterPump, OUTPUT);
+  digitalWrite(waterPump, HIGH);
+
+  // Initialize LCD
+  lcd.init();
+  lcd.backlight();
+
+  // Initialize DHT sensor
+  dht.begin();
+
+  // Connect to Blynk
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass, "blynk.cloud", 80);
+
+  // Display system loading message
+  lcd.setCursor(1, 0);
+  lcd.print("System Loading");
+  for (int a = 0; a <= 15; a++) {
+    lcd.setCursor(a, 1);
+    lcd.print(".");
+    delay(500);
+  }
+  lcd.clear();
+
+  // Set up the timer to call functions every interval
+  timer.setInterval(100L, soilMoistureSensor);  // Check soil moisture
+  timer.setInterval(2000L, readDHTSensor);      // Check temperature & humidity every 2 seconds
+}
+
+// Handle motor control based on button value from Blynk app
+BLYNK_WRITE(V1) {
+  Relay = param.asInt();
+
+  if (Relay == 1) {
+    digitalWrite(waterPump, LOW);  // Turn ON water pump
+    lcd.setCursor(0, 1);
+    lcd.print("Motor is ON ");
+  } else {
+    digitalWrite(waterPump, HIGH); // Turn OFF water pump
+    lcd.setCursor(0, 1);
+    lcd.print("Motor is OFF");
+  }
+}
+
+// Get and display soil moisture values
+void soilMoistureSensor() {
+  int value = analogRead(sensor);          // Read analog value from sensor
+  value = map(value, 0, 1024, 0, 100);     // Map to percentage
+  value = (value - 100) * -1;              // Invert for proper scaling
+
+  Blynk.virtualWrite(V0, value);           // Send value to Blynk app
+  lcd.setCursor(0, 0);
+  lcd.print("Moisture :");
+  lcd.print(value);
+  lcd.print(" %  ");                       // Display moisture percentage
+}
+
+// Read and display temperature and humidity values
+void readDHTSensor() {
+  float humidity = dht.readHumidity();       // Read humidity
+  float temperature = dht.readTemperature(); // Read temperature in Celsius
+
+  // Check if readings are valid
+  if (isnan(humidity) || isnan(temperature)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return;
+  }
+
+  // Send to Blynk
+  Blynk.virtualWrite(V4, temperature);  // Send temperature to Virtual Pin V2
+  Blynk.virtualWrite(V3, humidity);     // Send humidity to Virtual Pin V3
+
+  // Display both on LCD
+  lcd.setCursor(11, 1);
+  lcd.print("T: ");
+  lcd.print(temperature);
+  lcd.print("C    ");
+  lcd.setCursor(0, 1);
+  lcd.print("H: ");
+  lcd.print(humidity);
+  lcd.print("%    ");
+}
+
+void loop() {
+  Blynk.run();  // Run the Blynk library
+  timer.run();  // Run the Blynk timer
+}
